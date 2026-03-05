@@ -418,22 +418,38 @@ int main(){
             game.Update();
         }
 
-        if (IsKeyPressed(KEY_UP) && game.snake.direction.y != 1 && allowMove){
+        if (IsKeyPressed(KEY_W) && game.snake.direction.y != 1 && allowMove){
+            game.snake.direction = {0, -1};
+            game.running = true;
+            allowMove = false;
+        }else if (IsKeyPressed(KEY_UP) && game.snake.direction.y != 1 && allowMove){
             game.snake.direction = {0, -1};
             game.running = true;
             allowMove = false;
         }
-        if (IsKeyPressed(KEY_DOWN) && game.snake.direction.y != -1 && allowMove){
+        if (IsKeyPressed(KEY_S) && game.snake.direction.y != -1 && allowMove){
+            game.snake.direction = {0, 1};
+            game.running = true;
+            allowMove = false;
+        }else if (IsKeyPressed(KEY_DOWN) && game.snake.direction.y != -1 && allowMove){
             game.snake.direction = {0, 1};
             game.running = true;
             allowMove = false;
         }
-        if (IsKeyPressed(KEY_LEFT) && game.snake.direction.x != 1 && allowMove){
+        if (IsKeyPressed(KEY_A) && game.snake.direction.x != 1 && allowMove){
+            game.snake.direction = {-1, 0};
+            game.running = true;
+            allowMove = false;
+        }else if (IsKeyPressed(KEY_LEFT) && game.snake.direction.x != 1 && allowMove){
             game.snake.direction = {-1, 0};
             game.running = true;
             allowMove = false;
         }
-        if (IsKeyPressed(KEY_RIGHT) && game.snake.direction.x != -1 && allowMove){
+        if (IsKeyPressed(KEY_D) && game.snake.direction.x != -1 && allowMove){
+            game.snake.direction = {1, 0};
+            game.running = true;
+            allowMove = false;
+        }else if (IsKeyPressed(KEY_RIGHT) && game.snake.direction.x != -1 && allowMove){
             game.snake.direction = {1, 0};
             game.running = true;
             allowMove = false;
