@@ -7,18 +7,17 @@
 
 using namespace std;
 
-static bool allowMove = false;
+static bool allowMove = false; // Makes it so that the snake doesn't move until I move it
+// Some colors for the game
 Color green = {173, 204, 96, 255};
 Color darkGreen = {43, 51, 24, 255};
 Color wallGreen = {90, 110, 50, 255};
 Color poisonRed = {200, 40, 40, 255};
-
+// Screen and grid settings
 int cellSize = 30;
 int cellCount = 25;
 int offset = 75;
-
-double lastUpdateTime = 0;
-
+// Function to check if a Vector2 element is in a deque of Vector2
 bool ElementInDeque(Vector2 element, deque<Vector2> deque){
     for (unsigned int i = 0; i < deque.size(); i++){
         if (Vector2Equals(deque[i], element)){
@@ -27,7 +26,7 @@ bool ElementInDeque(Vector2 element, deque<Vector2> deque){
     }
     return false;
 }
-
+// Function to check if a Vector2 element is in a vector of Vector2
 bool ElementInVector(Vector2 element, const vector<Vector2>& vec){
     for (unsigned int i = 0; i < vec.size(); i++){
         if (Vector2Equals(vec[i], element)){
@@ -36,24 +35,16 @@ bool ElementInVector(Vector2 element, const vector<Vector2>& vec){
     }
     return false;
 }
-
-bool EventTriggered(double interval){
-    double currentTime = GetTime();
-    if (currentTime - lastUpdateTime >= interval){
-        lastUpdateTime = currentTime;
-        return true;
-    }
-    return false;
-}
-
+// Enum for the different screen states
 enum class ScreenState{
     Menu,
     Playing
 };
-
+// Everything that has to do with the snake
 class Snake{
 public:
     deque<Vector2> body = {Vector2{6, 9}, Vector2{5, 9}, Vector2{4, 9}};
+    deque<Vector2> previousBody = body;
     Vector2 direction = {1, 0};
     bool addSegment = false;
     Texture2D headUp;
@@ -70,14 +61,14 @@ public:
     Texture2D bodyTopRight;
     Texture2D bodyBottomLeft;
     Texture2D bodyBottomRight;
-
+    // Makes the snakes body segment match the correct size and draws it to the screen
     void DrawScaledTexture(Texture2D texture, int drawX, int drawY){
         Rectangle source = Rectangle{0.0f, 0.0f, (float)texture.width, (float)texture.height};
         Rectangle dest = Rectangle{(float)drawX, (float)drawY, (float)cellSize, (float)cellSize};
         Vector2 origin = Vector2{0.0f, 0.0f};
         DrawTexturePro(texture, source, dest, origin, 0.0f, WHITE);
     }
-
+    // Snake textures constructor
     Snake(){
         headUp = LoadTexture("Graphics/head_up.png");
         headDown = LoadTexture("Graphics/head_down.png");
@@ -94,7 +85,7 @@ public:
         bodyBottomLeft = LoadTexture("Graphics/body_bl.png");
         bodyBottomRight = LoadTexture("Graphics/body_br.png");
     }
-
+    // Snake textures destructor
     ~Snake(){
         UnloadTexture(headUp);
         UnloadTexture(headDown);
@@ -111,72 +102,90 @@ public:
         UnloadTexture(bodyBottomLeft);
         UnloadTexture(bodyBottomRight);
     }
-
+    // Replaces the snake head texture to match the direction it's moving in
     Texture2D GetHeadTexture(){
         if (direction.x == 1) return headRight;
         if (direction.x == -1) return headLeft;
         if (direction.y == 1) return headDown;
         return headUp;
     }
-
-    Texture2D GetTailTexture(){
-        Vector2 tail = body[body.size() - 1];
-        Vector2 beforeTail = body[body.size() - 2];
-        Vector2 diff = Vector2Subtract(tail, beforeTail);
+    // Gets the direction from the difference of two positions, but only returns the dominant direction (the one with the biggest absolute value)
+    Vector2 GetDominantDirection(Vector2 delta){
+        if (fabs(delta.x) >= fabs(delta.y)){
+            return Vector2{delta.x >= 0 ? 1.0f : -1.0f, 0.0f};
+        }
+        return Vector2{0.0f, delta.y >= 0 ? 1.0f : -1.0f};
+    }
+    // Replaces the snake tail texture to match the direction it's moving in
+    Texture2D GetTailTextureForPositions(Vector2 beforeTail, Vector2 tail){
+        Vector2 diff = GetDominantDirection(Vector2Subtract(tail, beforeTail));
         if (diff.x == 1) return tailRight;
         if (diff.x == -1) return tailLeft;
         if (diff.y == 1) return tailDown;
         return tailUp;
     }
-
+    // Replaces the snake body segment texture to match the direction it's moving in
     Texture2D GetBodyTexture(Vector2 prev, Vector2 current, Vector2 next){
-        int prevX = (int)prev.x;
-        int prevY = (int)prev.y;
-        int currentX = (int)current.x;
-        int currentY = (int)current.y;
-        int nextX = (int)next.x;
-        int nextY = (int)next.y;
+        Vector2 prevDir = GetDominantDirection(Vector2Subtract(prev, current));
+        Vector2 nextDir = GetDominantDirection(Vector2Subtract(next, current));
 
-        if (prevX == nextX) return bodyVertical;
-        if (prevY == nextY) return bodyHorizontal;
+        if ((prevDir.x != 0 && nextDir.x != 0) || fabs(prev.y - next.y) < 0.01f) return bodyHorizontal;
+        if ((prevDir.y != 0 && nextDir.y != 0) || fabs(prev.x - next.x) < 0.01f) return bodyVertical;
 
-        int dirPrevX = prevX - currentX;
-        int dirPrevY = prevY - currentY;
-        int dirNextX = nextX - currentX;
-        int dirNextY = nextY - currentY;
-
-        bool up = (dirPrevY == -1) || (dirNextY == -1);
-        bool down = (dirPrevY == 1) || (dirNextY == 1);
-        bool left = (dirPrevX == -1) || (dirNextX == -1);
-        bool right = (dirPrevX == 1) || (dirNextX == 1);
+        bool up = (prevDir.y < 0) || (nextDir.y < 0);
+        bool down = (prevDir.y > 0) || (nextDir.y > 0);
+        bool left = (prevDir.x < 0) || (nextDir.x < 0);
+        bool right = (prevDir.x > 0) || (nextDir.x > 0);
 
         if (up && left) return bodyTopLeft;
         if (up && right) return bodyTopRight;
         if (down && left) return bodyBottomLeft;
         return bodyBottomRight;
     }
+    // Makes the snake move smoothly 
+    Vector2 GetInterpolatedPosition(unsigned int index, float alpha){
+        Vector2 endPos = body[index];
+        Vector2 startPos;
 
-    void Draw(){
+        if (previousBody.empty()){
+            startPos = endPos;
+        }
+        else if (index < previousBody.size()){
+            startPos = previousBody[index];
+        }
+        else{
+            startPos = previousBody.back();
+        }
+
+        return Vector2Lerp(startPos, endPos, alpha);
+    }
+    // Draws the snake to the screen with the correct textures and interpolated positions
+    void Draw(float alpha){
         for (unsigned int i = 0; i < body.size(); i++){
-            float x = body[i].x;
-            float y = body[i].y;
-            int drawX = offset + (int)(x * cellSize);
-            int drawY = offset + (int)(y * cellSize);
+            Vector2 drawPos = GetInterpolatedPosition(i, alpha);
+            float x = drawPos.x;
+            float y = drawPos.y;
+            int drawX = offset + (int)roundf(x * cellSize);
+            int drawY = offset + (int)roundf(y * cellSize);
 
             if (i == 0){
                 DrawScaledTexture(GetHeadTexture(), drawX, drawY);
             }
             else if (i == body.size() - 1){
-                DrawScaledTexture(GetTailTexture(), drawX, drawY);
+                Vector2 tailStart = GetInterpolatedPosition(i - 1, alpha);
+                DrawScaledTexture(GetTailTextureForPositions(tailStart, drawPos), drawX, drawY);
             }
             else{
-                Texture2D segmentTexture = GetBodyTexture(body[i - 1], body[i], body[i + 1]);
+                Vector2 prevPos = GetInterpolatedPosition(i - 1, alpha);
+                Vector2 nextPos = GetInterpolatedPosition(i + 1, alpha);
+                Texture2D segmentTexture = GetBodyTexture(prevPos, drawPos, nextPos);
                 DrawScaledTexture(segmentTexture, drawX, drawY);
             }
         }
     }
-
+    // Updates the snakes position and body segments, and adds a segment if it has just eaten food
     void Update(){
+        previousBody = body;
         body.push_front(Vector2Add(body[0], direction));
         if (addSegment == true){
             addSegment = false;
@@ -185,40 +194,41 @@ public:
             body.pop_back();
         }
     }
-
+    // Resets the snake to its starting position and direction
     void Reset(){
         body = {Vector2{6, 9}, Vector2{5, 9}, Vector2{4, 9}};
+        previousBody = body;
         direction = {1, 0};
     }
 };
-
+// Everything that has to do with the food
 class Food{
 
 public:
     Vector2 position;
     Texture2D texture;
-
+    // Food constructor, spawns the food in a random place except the snake body and loads the food texture
     Food(deque<Vector2> snakeBody){
         Image image = LoadImage("Graphics/food.png");
         texture = LoadTextureFromImage(image);
         UnloadImage(image);
         position = GenerateRandomPos(snakeBody);
     }
-
+    // Food destructor, unloads the food texture
     ~Food(){
         UnloadTexture(texture);
     }
-
+    // Draws the food to the screen
     void Draw(){
         DrawTexture(texture, offset + position.x * cellSize, offset + position.y * cellSize, WHITE);
     }
-
+    // Makes walls and poison fruit
     Vector2 GenerateRandomCell(){
         float x = GetRandomValue(0, cellCount - 1);
         float y = GetRandomValue(0, cellCount - 1);
         return Vector2{x, y};
     }
-
+    // Spawns foods in a random place avoiding the snake body and the rest
     Vector2 GenerateRandomPos(deque<Vector2> snakeBody){
         Vector2 position = GenerateRandomCell();
         while (ElementInDeque(position, snakeBody)){
@@ -227,7 +237,7 @@ public:
         return position;
     }
 };
-
+// Everything that has nothing to do with the snake and the fruit
 class Game{
 public:
     Snake snake = Snake();
@@ -243,26 +253,26 @@ public:
     Vector2 poisonPos = {0, 0};
     Sound eatSound;
     Sound wallSound;
-
+    // Game constructor
     Game(){
         InitAudioDevice();
         eatSound = LoadSound("Sounds/eat.mp3");
         wallSound = LoadSound("Sounds/wall.mp3");
     }
-
+    // Game destructor
     ~Game(){
         UnloadSound(eatSound);
         UnloadSound(wallSound);
         CloseAudioDevice();
     }
-
-    void Draw(){
+    // Draws everything that needs to be drawn to the screen
+    void Draw(float alpha){
         food.Draw();
         DrawWalls();
         DrawPoison();
-        snake.Draw();
+        snake.Draw(alpha);
     }
-
+    // Updates the game logic, checks for collisions and updates the snake position
     void Update(){
         if (running){
             snake.Update();
@@ -272,7 +282,7 @@ public:
             CheckCollisionWithTail();
         }
     }
-
+    // Checks if a cell is blocked for the bot to move into
     bool IsCellBlockedForMove(Vector2 pos){
         if (pos.x < 0 || pos.x >= cellCount || pos.y < 0 || pos.y >= cellCount) return true;
         deque<Vector2> bodyToCheck = snake.body;
@@ -284,7 +294,7 @@ public:
         if (poisonActive && Vector2Equals(pos, poisonPos)) return true;
         return false;
     }
-
+    // Makes the bot move
     Vector2 ChooseBotDirection(){
         Vector2 options[4] = {Vector2{1, 0}, Vector2{-1, 0}, Vector2{0, 1}, Vector2{0, -1}};
         Vector2 bestDir = snake.direction;
@@ -306,20 +316,20 @@ public:
 
         return bestDir;
     }
-
+    // Gets the current stage goal, making sure to not go out of bounds of the stageGoals array
     int CurrentStageGoal() const {
         int index = stage - 1;
         if (index < 0) index = 0;
         if (index > 2) index = 2;
         return stageGoals[index];
     }
-
+    // Generates a random cell position for the walls and poison fruit to spawn in
     Vector2 GenerateRandomCell(){
         float x = GetRandomValue(0, cellCount - 1);
         float y = GetRandomValue(0, cellCount - 1);
         return Vector2{x, y};
     }
-
+    // Checks if a cell is blocked by the snake body
     bool IsCellBlocked(Vector2 pos, const deque<Vector2>& snakeBody, bool checkFood, bool checkPoison){
         if (ElementInDeque(pos, snakeBody)) return true;
         if (ElementInVector(pos, walls)) return true;
@@ -327,7 +337,7 @@ public:
         if (checkPoison && poisonActive && Vector2Equals(pos, poisonPos)) return true;
         return false;
     }
-
+    // Generates a random position for the walls and poison fruit to spawn in, making sure they don't spawn on the snake body, food, or each other
     Vector2 GenerateRandomPos(const deque<Vector2>& snakeBody, bool checkFood, bool checkPoison){
         Vector2 position = GenerateRandomCell();
         while (IsCellBlocked(position, snakeBody, checkFood, checkPoison)){
@@ -335,14 +345,14 @@ public:
         }
         return position;
     }
-
+    // Relocates the food to a new random position, making sure it doesn't spawn on the snake body, walls, or poison fruit
     void RelocateFood(){
         food.position = food.GenerateRandomPos(snake.body);
         while (ElementInVector(food.position, walls) || (poisonActive && Vector2Equals(food.position, poisonPos))){
             food.position = food.GenerateRandomPos(snake.body);
         }
     }
-
+    // Builds the stage by adding walls and poison fruit based on the current stage, and relocates the food
     void BuildStage(){
         if (stage < 2){
             walls.clear();
@@ -366,7 +376,7 @@ public:
 
         RelocateFood();
     }
-
+    // Checks if the snake head is colliding with the food, and if so, relocates the food, adds a segment to the snake, increases the score and stage progress, and plays the eat sound. Also checks if the stage goal has been reached and if so, advances to the next stage
     void CheckCollisionWithFood(){
         if (Vector2Equals(snake.body[0], food.position)){
             RelocateFood();
@@ -383,7 +393,7 @@ public:
             BuildStage();
         }
     }
-
+    // Checks if the snake head is colliding with the edges of the screen
     void CheckCollisionWithEdges(){
         if (snake.body[0].x == cellCount || snake.body[0].x == -1){
             GameOver();
@@ -392,7 +402,7 @@ public:
             GameOver();
         }
     }
-
+    // Checks if the snake head is colliding with the walls or poison fruit
     void CheckCollisionWithWalls(){
         if (stage >= 2 && ElementInVector(snake.body[0], walls)){
             GameOver();
@@ -401,7 +411,7 @@ public:
             GameOver();
         }
     }
-
+    // Resets the game to the starting conditions of stage 1
     void GameOver(){
         snake.Reset();
         stage = 1;
@@ -414,7 +424,7 @@ public:
         score = 0;
         PlaySound(wallSound);
     }
-
+    // Checks if the snake head is colliding with its own body, ignoring the head itself
     void CheckCollisionWithTail(){
         deque<Vector2> headlessBody = snake.body;
         headlessBody.pop_front();
@@ -422,7 +432,7 @@ public:
             GameOver();
         }
     }
-
+    // Draws the walls to the screen
     void DrawWalls(){
         for (unsigned int i = 0; i < walls.size(); i++){
             int drawX = offset + (int)(walls[i].x * cellSize);
@@ -430,7 +440,7 @@ public:
             DrawRectangle(drawX, drawY, cellSize, cellSize, wallGreen);
         }
     }
-
+    // Draws the poison fruit to the screen
     void DrawPoison(){
         if (!poisonActive) return;
         int drawX = offset + (int)(poisonPos.x * cellSize);
@@ -438,7 +448,7 @@ public:
         DrawRectangle(drawX, drawY, cellSize, cellSize, poisonRed);
     }
 };
-
+// Main function, initializes the window and game, and contains the main game loop that checks for input, updates the game logic, and draws everything to the screen
 int main(){
     InitWindow(2 * offset + cellSize * cellCount, 2 * offset + cellSize * cellCount, "Retro Snake");
     SetTargetFPS(60);
@@ -447,8 +457,10 @@ int main(){
     ScreenState screenState = ScreenState::Menu;
     int menuSelection = 0;
     bool botMode = false;
+    float movementAccumulator = 0.0f;
 
     while (WindowShouldClose() == false){
+        float frameTime = GetFrameTime();
         BeginDrawing();
 
         if (screenState == ScreenState::Menu){
@@ -458,7 +470,7 @@ int main(){
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)){
                 botMode = (menuSelection == 1);
                 screenState = ScreenState::Playing;
-                allowMove = false;
+                allowMove = true;
                 game.snake.Reset();
                 game.stage = 1;
                 game.applesThisStage = 0;
@@ -466,8 +478,9 @@ int main(){
                 game.walls.clear();
                 game.poisonActive = false;
                 game.food.position = game.food.GenerateRandomPos(game.snake.body);
-                game.running = true;
+                game.running = botMode;
                 game.score = 0;
+                movementAccumulator = 0.0f;
             }
 
             ClearBackground(green);
@@ -486,22 +499,10 @@ int main(){
                 screenState = ScreenState::Menu;
                 allowMove = false;
                 game.running = false;
+                movementAccumulator = 0.0f;
             }
 
-            if (EventTriggered(0.2)){
-                allowMove = true;
-                game.Update();
-            }
-
-            if (EventTriggered(game.moveSpeed)){
-                allowMove = true;
-                game.Update();
-            }
-
-            if (botMode && allowMove){
-                game.snake.direction = game.ChooseBotDirection();
-                allowMove = false;
-            }
+            movementAccumulator += frameTime;
 
             if (!botMode){
                 if (IsKeyPressed(KEY_W) && game.snake.direction.y != 1 && allowMove){
@@ -542,13 +543,28 @@ int main(){
                 }
             }
 
+            while (movementAccumulator >= game.moveSpeed){
+                movementAccumulator -= (float)game.moveSpeed;
+                if (botMode){
+                    game.snake.direction = game.ChooseBotDirection();
+                }
+                game.Update();
+                allowMove = true;
+            }
+
+            float interpolationAlpha = 0.0f;
+            if (game.moveSpeed > 0.0){
+                interpolationAlpha = movementAccumulator / (float)game.moveSpeed;
+            }
+            interpolationAlpha = Clamp(interpolationAlpha, 0.0f, 1.0f);
+
             // Drawing
             ClearBackground(green);
             DrawRectangleLinesEx(Rectangle{(float)offset - 5, (float)offset - 5, (float)cellSize * cellCount + 10, (float)cellSize * cellCount + 10}, 5, darkGreen);
             DrawText("Retro Snake", offset - 5, 20, 40, darkGreen);
             DrawText(TextFormat("Stage %i", game.stage), offset + 450, 20, 40, darkGreen);
             DrawText(TextFormat("%i", game.score), offset - 5, offset + cellSize * cellCount + 10, 40, darkGreen);
-            game.Draw();
+            game.Draw(interpolationAlpha);
         }
 
         EndDrawing();
