@@ -2,6 +2,7 @@
 #include <raylib.h>
 #include <deque>
 #include <vector>
+#include <queue>
 #include <cmath>
 #include <raymath.h>
 
@@ -294,11 +295,99 @@ public:
         if (poisonActive && Vector2Equals(pos, poisonPos)) return true;
         return false;
     }
+    // Simulates snake body state after one move in the given direction
+    deque<Vector2> SimulateBodyAfterMove(Vector2 dir){
+        deque<Vector2> simulated = snake.body;
+        simulated.push_front(Vector2Add(snake.body[0], dir));
+        if (!snake.addSegment && !simulated.empty()){
+            simulated.pop_back();
+        }
+        return simulated;
+    }
+    // Checks if a position is blocked in a hypothetical future state
+    bool IsCellBlockedInState(Vector2 pos, const deque<Vector2>& stateBody){
+        if (pos.x < 0 || pos.x >= cellCount || pos.y < 0 || pos.y >= cellCount) return true;
+        if (ElementInDeque(pos, stateBody)) return true;
+        if (ElementInVector(pos, walls)) return true;
+        if (poisonActive && Vector2Equals(pos, poisonPos)) return true;
+        return false;
+    }
+    // Shortest path distance between two cells in a hypothetical future state
+    int GetPathDistance(Vector2 start, Vector2 target, const deque<Vector2>& stateBody){
+        if (Vector2Equals(start, target)) return 0;
+
+        vector<vector<int>> distance(cellCount, vector<int>(cellCount, -1));
+        queue<Vector2> bfs;
+        bfs.push(start);
+        distance[(int)start.y][(int)start.x] = 0;
+
+        Vector2 options[4] = {Vector2{1, 0}, Vector2{-1, 0}, Vector2{0, 1}, Vector2{0, -1}};
+
+        while (!bfs.empty()){
+            Vector2 current = bfs.front();
+            bfs.pop();
+
+            for (int i = 0; i < 4; i++){
+                Vector2 next = Vector2Add(current, options[i]);
+
+                if (next.x < 0 || next.x >= cellCount || next.y < 0 || next.y >= cellCount) continue;
+
+                int nx = (int)next.x;
+                int ny = (int)next.y;
+                if (distance[ny][nx] != -1) continue;
+
+                if (IsCellBlockedInState(next, stateBody) && !Vector2Equals(next, target)) continue;
+
+                distance[ny][nx] = distance[(int)current.y][(int)current.x] + 1;
+                if (Vector2Equals(next, target)){
+                    return distance[ny][nx];
+                }
+
+                bfs.push(next);
+            }
+        }
+
+        return -1;
+    }
+    // Counts how much open space is reachable from a cell in a hypothetical future state
+    int GetReachableCellCount(Vector2 start, const deque<Vector2>& stateBody){
+        if (IsCellBlockedInState(start, stateBody)) return 0;
+
+        vector<vector<bool>> visited(cellCount, vector<bool>(cellCount, false));
+        queue<Vector2> bfs;
+        bfs.push(start);
+        visited[(int)start.y][(int)start.x] = true;
+
+        int reachable = 0;
+        Vector2 options[4] = {Vector2{1, 0}, Vector2{-1, 0}, Vector2{0, 1}, Vector2{0, -1}};
+
+        while (!bfs.empty()){
+            Vector2 current = bfs.front();
+            bfs.pop();
+            reachable++;
+
+            for (int i = 0; i < 4; i++){
+                Vector2 next = Vector2Add(current, options[i]);
+                if (next.x < 0 || next.x >= cellCount || next.y < 0 || next.y >= cellCount) continue;
+
+                int nx = (int)next.x;
+                int ny = (int)next.y;
+                if (visited[ny][nx]) continue;
+                if (IsCellBlockedInState(next, stateBody)) continue;
+
+                visited[ny][nx] = true;
+                bfs.push(next);
+            }
+        }
+
+        return reachable;
+    }
     // Makes the bot move
     Vector2 ChooseBotDirection(){
         Vector2 options[4] = {Vector2{1, 0}, Vector2{-1, 0}, Vector2{0, 1}, Vector2{0, -1}};
         Vector2 bestDir = snake.direction;
         int bestScore = 1000000;
+        bool foundMove = false;
 
         for (int i = 0; i < 4; i++){
             Vector2 dir = options[i];
@@ -307,10 +396,44 @@ public:
             Vector2 nextPos = Vector2Add(snake.body[0], dir);
             if (IsCellBlockedForMove(nextPos)) continue;
 
-            int score = (int)(abs((int)(food.position.x - nextPos.x)) + abs((int)(food.position.y - nextPos.y)));
+            deque<Vector2> simulatedBody = SimulateBodyAfterMove(dir);
+            int pathDistance = GetPathDistance(nextPos, food.position, simulatedBody);
+            int openArea = GetReachableCellCount(nextPos, simulatedBody);
+            int spaceNeeded = (int)simulatedBody.size();
+
+            int score = 0;
+            if (pathDistance >= 0){
+                score += pathDistance * 20;
+            }
+            else{
+                score += 2000;
+            }
+
+            if (openArea < spaceNeeded){
+                score += 1500;
+            }
+
+            score -= openArea;
+
+            // Slight preference for stable movement to avoid jittery turns.
+            if (Vector2Equals(dir, snake.direction)){
+                score -= 3;
+            }
+
             if (score < bestScore){
                 bestScore = score;
                 bestDir = dir;
+                foundMove = true;
+            }
+        }
+
+        if (!foundMove){
+            for (int i = 0; i < 4; i++){
+                Vector2 dir = options[i];
+                Vector2 nextPos = Vector2Add(snake.body[0], dir);
+                if (!IsCellBlockedForMove(nextPos)){
+                    return dir;
+                }
             }
         }
 
@@ -352,6 +475,14 @@ public:
             food.position = food.GenerateRandomPos(snake.body);
         }
     }
+    // Relocates the poison to a new random position, avoiding snake body, walls, and food
+    void RelocatePoison(){
+        if (!poisonActive) return;
+        poisonPos = GenerateRandomPos(snake.body, true, false);
+        while (ElementInVector(poisonPos, walls) || Vector2Equals(poisonPos, food.position)){
+            poisonPos = GenerateRandomPos(snake.body, true, false);
+        }
+    }
     // Builds the stage by adding walls and poison fruit based on the current stage, and relocates the food
     void BuildStage(){
         if (stage < 2){
@@ -380,6 +511,7 @@ public:
     void CheckCollisionWithFood(){
         if (Vector2Equals(snake.body[0], food.position)){
             RelocateFood();
+            RelocatePoison();
             snake.addSegment = true;
             score++;
             applesThisStage++;
@@ -457,6 +589,7 @@ int main(){
     ScreenState screenState = ScreenState::Menu;
     int menuSelection = 0;
     bool botMode = false;
+    bool paused = false;
     float movementAccumulator = 0.0f;
 
     while (WindowShouldClose() == false){
@@ -480,6 +613,7 @@ int main(){
                 game.food.position = game.food.GenerateRandomPos(game.snake.body);
                 game.running = botMode;
                 game.score = 0;
+                paused = false;
                 movementAccumulator = 0.0f;
             }
 
@@ -499,10 +633,17 @@ int main(){
                 screenState = ScreenState::Menu;
                 allowMove = false;
                 game.running = false;
+                paused = false;
                 movementAccumulator = 0.0f;
             }
 
-            movementAccumulator += frameTime;
+            if (IsKeyPressed(KEY_P) && game.running){
+                paused = !paused;
+            }
+
+            if (!paused){
+                movementAccumulator += frameTime;
+            }
 
             if (!botMode){
                 if (IsKeyPressed(KEY_W) && game.snake.direction.y != 1 && allowMove){
@@ -543,7 +684,7 @@ int main(){
                 }
             }
 
-            while (movementAccumulator >= game.moveSpeed){
+            while (!paused && movementAccumulator >= game.moveSpeed){
                 movementAccumulator -= (float)game.moveSpeed;
                 if (botMode){
                     game.snake.direction = game.ChooseBotDirection();
@@ -564,6 +705,13 @@ int main(){
             DrawText("Retro Snake", offset - 5, 20, 40, darkGreen);
             DrawText(TextFormat("Stage %i", game.stage), offset + 450, 20, 40, darkGreen);
             DrawText(TextFormat("%i", game.score), offset - 5, offset + cellSize * cellCount + 10, 40, darkGreen);
+            DrawText("P to pause/resume", offset + 10, offset + cellSize * cellCount + 18, 20, darkGreen);
+            if (paused){
+                int pausedWidth = MeasureText("PAUSED", 50);
+                int pausedX = offset + (cellSize * cellCount - pausedWidth) / 2;
+                int pausedY = offset + (cellSize * cellCount - 50) / 2;
+                DrawText("PAUSED", pausedX, pausedY, 50, darkGreen);
+            }
             game.Draw(interpolationAlpha);
         }
 
