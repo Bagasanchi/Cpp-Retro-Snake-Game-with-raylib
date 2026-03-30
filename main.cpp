@@ -705,7 +705,7 @@ int main(){
             DrawText("Retro Snake", offset - 5, 20, 40, darkGreen);
             DrawText(TextFormat("Stage %i", game.stage), offset + 450, 20, 40, darkGreen);
             DrawText(TextFormat("%i", game.score), offset - 5, offset + cellSize * cellCount + 10, 40, darkGreen);
-            DrawText("P to pause/resume", offset + 10, offset + cellSize * cellCount + 18, 20, darkGreen);
+            DrawText("P to pause/resume", offset + 20, offset + cellSize * cellCount + 18, 20, darkGreen);
             if (paused){
                 int pausedWidth = MeasureText("PAUSED", 50);
                 int pausedX = offset + (cellSize * cellCount - pausedWidth) / 2;
