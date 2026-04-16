@@ -359,6 +359,26 @@ public:
         if (poisonActive && Vector2Equals(pos, poisonPos)) return true;
         return false;
     }
+    // Checks if a move target is blocked for a given hypothetical state
+    bool IsCellBlockedForMoveInState(Vector2 pos, const deque<Vector2>& stateBody){
+        if (pos.x < 0 || pos.x >= cellCountX || pos.y < 0 || pos.y >= cellCountY) return true;
+        deque<Vector2> bodyToCheck = stateBody;
+        if (!bodyToCheck.empty()){
+            bodyToCheck.pop_back();
+        }
+        if (ElementInDeque(pos, bodyToCheck)) return true;
+        if (ElementInVector(pos, walls)) return true;
+        if (poisonActive && Vector2Equals(pos, poisonPos)) return true;
+        return false;
+    }
+    // Simulates one move in a hypothetical state (no growth assumption)
+    deque<Vector2> SimulateBodyAfterMoveInState(const deque<Vector2>& stateBody, Vector2 dir){
+        deque<Vector2> simulated = stateBody;
+        if (simulated.empty()) return simulated;
+        simulated.push_front(Vector2Add(stateBody[0], dir));
+        simulated.pop_back();
+        return simulated;
+    }
     // Shortest path distance between two cells in a hypothetical future state
     int GetPathDistance(Vector2 start, Vector2 target, const deque<Vector2>& stateBody){
         if (Vector2Equals(start, target)) return 0;
@@ -429,6 +449,78 @@ public:
 
         return reachable;
     }
+    // Counts safe options available on the next turn from a hypothetical state
+    int CountSafeNextMoves(const deque<Vector2>& stateBody, Vector2 stateDirection){
+        Vector2 options[4] = {Vector2{1, 0}, Vector2{-1, 0}, Vector2{0, 1}, Vector2{0, -1}};
+        int safeMoves = 0;
+
+        for (int i = 0; i < 4; i++){
+            Vector2 dir = options[i];
+            if (Vector2Equals(dir, Vector2Scale(stateDirection, -1))) continue;
+
+            Vector2 nextPos = Vector2Add(stateBody[0], dir);
+            if (IsCellBlockedForMoveInState(nextPos, stateBody)) continue;
+
+            safeMoves++;
+        }
+
+        return safeMoves;
+    }
+    // Estimates the best move quality one turn ahead from a hypothetical state
+    int EvaluateFutureBestScore(const deque<Vector2>& stateBody, Vector2 stateDirection){
+        if (stateBody.empty()) return 100000;
+
+        Vector2 options[4] = {Vector2{1, 0}, Vector2{-1, 0}, Vector2{0, 1}, Vector2{0, -1}};
+        int bestFutureScore = 100000;
+        bool foundFuture = false;
+
+        for (int i = 0; i < 4; i++){
+            Vector2 dir = options[i];
+            if (Vector2Equals(dir, Vector2Scale(stateDirection, -1))) continue;
+
+            Vector2 nextPos = Vector2Add(stateBody[0], dir);
+            if (IsCellBlockedForMoveInState(nextPos, stateBody)) continue;
+
+            deque<Vector2> nextBody = SimulateBodyAfterMoveInState(stateBody, dir);
+            if (nextBody.empty()) continue;
+
+            int pathDistance = -1;
+            for (unsigned int fruitIndex = 0; fruitIndex < fruits.size(); fruitIndex++){
+                if (!fruits[fruitIndex].active) continue;
+                int candidateDistance = GetPathDistance(nextPos, fruits[fruitIndex].position, nextBody);
+                if (candidateDistance >= 0 && (pathDistance < 0 || candidateDistance < pathDistance)){
+                    pathDistance = candidateDistance;
+                }
+            }
+
+            int openArea = GetReachableCellCount(nextPos, nextBody);
+            int tailDistance = GetPathDistance(nextPos, nextBody.back(), nextBody);
+            int safeNextMoves = CountSafeNextMoves(nextBody, dir);
+
+            int score = 0;
+            if (pathDistance >= 0){
+                score += pathDistance * 16;
+            }
+            else{
+                score += 2200;
+            }
+
+            if (tailDistance < 0){
+                score += 1200;
+            }
+
+            score -= openArea * 2;
+            score -= safeNextMoves * 40;
+
+            if (score < bestFutureScore){
+                bestFutureScore = score;
+                foundFuture = true;
+            }
+        }
+
+        if (!foundFuture) return 100000;
+        return bestFutureScore;
+    }
     // Makes the bot move
     Vector2 ChooseBotDirection(){
         Vector2 options[4] = {Vector2{1, 0}, Vector2{-1, 0}, Vector2{0, 1}, Vector2{0, -1}};
@@ -454,24 +546,37 @@ public:
             }
             int openArea = GetReachableCellCount(nextPos, simulatedBody);
             int spaceNeeded = (int)simulatedBody.size();
+            int tailDistance = GetPathDistance(nextPos, simulatedBody.back(), simulatedBody);
+            int safeNextMoves = CountSafeNextMoves(simulatedBody, dir);
+            int futureScore = EvaluateFutureBestScore(simulatedBody, dir);
 
             int score = 0;
             if (pathDistance >= 0){
-                score += pathDistance * 20;
+                score += pathDistance * 18;
             }
             else{
-                score += 2000;
+                score += 2500;
             }
 
             if (openArea < spaceNeeded){
-                score += 1500;
+                score += 1400;
             }
 
-            score -= openArea;
+            if (tailDistance < 0){
+                score += 900;
+            }
+
+            if (safeNextMoves == 0){
+                score += 3000;
+            }
+
+            score -= openArea * 2;
+            score -= safeNextMoves * 45;
+            score += futureScore / 3;
 
             // Slight preference for stable movement to avoid jittery turns.
             if (Vector2Equals(dir, snake.direction)){
-                score -= 3;
+                score -= 4;
             }
 
             if (score < bestScore){
